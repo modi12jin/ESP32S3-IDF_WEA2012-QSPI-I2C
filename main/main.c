@@ -1,56 +1,86 @@
 #include <stdio.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "driver/spi_master.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
-#include "driver/gpio.h"
-#include "driver/spi_master.h"
 #include "esp_err.h"
 #include "esp_log.h"
+
 #include "lvgl.h"
 #include "lv_demos.h"
 
-#include "esp_lcd_panel_io_qspi.h"
-#include "esp_lcd_wea2012.h"
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+#include "esp_lcd_spd2010.h"
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71
+#include "esp_lcd_gc9b71.h"
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
+#include "esp_lcd_sh8601.h"
+#endif
 
-#include "driver/i2c.h"
-#include "esp_lcd_touch_wea2012.h"
+#if CONFIG_EXAMPLE_LCD_TOUCH_CONTROLLER_SPD2010
+#include "esp_lcd_touch_spd2010.h"
+#elif CONFIG_EXAMPLE_LCD_TOUCH_CONTROLLER_CST816S
+#include "esp_lcd_touch_cst816s.h"
+#endif
 
 static const char *TAG = "example";
+static SemaphoreHandle_t lvgl_mux = NULL;
 
-// 在示例中使用SPI2
-#define LCD_HOST SPI2_HOST
-#define EXAMPLE_LCD_PIXEL_CLOCK_HZ SPI_MASTER_FREQ_80M
-#define EXAMPLE_PIN_NUM_SCLK 5
-#define EXAMPLE_PIN_NUM_D0 14
-#define EXAMPLE_PIN_NUM_D1 8
-#define EXAMPLE_PIN_NUM_D2 0
-#define EXAMPLE_PIN_NUM_D3 1
-#define EXAMPLE_PIN_NUM_LCD_RST 6
-#define EXAMPLE_PIN_NUM_LCD_CS 10
+#define LCD_HOST    SPI2_HOST
+#define TOUCH_HOST  I2C_NUM_0
 
-#define EXAMPLE_LCD_BK_LIGHT_ON_LEVEL 1
+#if CONFIG_LV_COLOR_DEPTH == 32
+#define LCD_BIT_PER_PIXEL       (24)
+#elif CONFIG_LV_COLOR_DEPTH == 16
+#define LCD_BIT_PER_PIXEL       (16)
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////// Please update the following configuration according to your LCD spec //////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#define EXAMPLE_LCD_BK_LIGHT_ON_LEVEL  1
 #define EXAMPLE_LCD_BK_LIGHT_OFF_LEVEL !EXAMPLE_LCD_BK_LIGHT_ON_LEVEL
-#define EXAMPLE_PIN_NUM_BK_LIGHT 13
+#define EXAMPLE_PIN_NUM_LCD_CS            (GPIO_NUM_10)
+#define EXAMPLE_PIN_NUM_LCD_PCLK          (GPIO_NUM_5)
+#define EXAMPLE_PIN_NUM_LCD_DATA0         (GPIO_NUM_14)
+#define EXAMPLE_PIN_NUM_LCD_DATA1         (GPIO_NUM_8)
+#define EXAMPLE_PIN_NUM_LCD_DATA2         (GPIO_NUM_0)
+#define EXAMPLE_PIN_NUM_LCD_DATA3         (GPIO_NUM_1)
+#define EXAMPLE_PIN_NUM_LCD_RST           (GPIO_NUM_6)
+#define EXAMPLE_PIN_NUM_BK_LIGHT          (GPIO_NUM_13)
 
-#define EXAMPLE_I2C_NUM 0 // I2C number
-#define EXAMPLE_I2C_SCL 9
-#define EXAMPLE_I2C_SDA 3
-#define EXAMPLE_PIN_NUM_TP_RST 4
-#define EXAMPLE_PIN_NUM_TP_INT 11
+// The pixel number in horizontal and vertical
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+#define EXAMPLE_LCD_H_RES              356
+#define EXAMPLE_LCD_V_RES              400
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71
+#define EXAMPLE_LCD_H_RES              320
+#define EXAMPLE_LCD_V_RES              386
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
+#define EXAMPLE_LCD_H_RES              454
+#define EXAMPLE_LCD_V_RES              454
+#endif
 
-#define EXAMPLE_LCD_H_RES 356
-#define EXAMPLE_LCD_V_RES 400
-
-// 用于表示命令和参数的位数
-#define EXAMPLE_LCD_CMD_BITS 8
-#define EXAMPLE_LCD_PARAM_BITS 8
-
-#define EXAMPLE_LVGL_TICK_PERIOD_MS 2
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+#define EXAMPLE_PIN_NUM_TOUCH_SCL         (GPIO_NUM_9)
+#define EXAMPLE_PIN_NUM_TOUCH_SDA         (GPIO_NUM_3)
+#define EXAMPLE_PIN_NUM_TOUCH_RST         (GPIO_NUM_4)
+#define EXAMPLE_PIN_NUM_TOUCH_INT         (GPIO_NUM_11)
 
 esp_lcd_touch_handle_t tp = NULL;
+#endif
+
+#define EXAMPLE_LVGL_TICK_PERIOD_MS    2
+#define EXAMPLE_LVGL_TASK_MAX_DELAY_MS 500
+#define EXAMPLE_LVGL_TASK_MIN_DELAY_MS 1
+#define EXAMPLE_LVGL_TASK_STACK_SIZE   (4 * 1024)
+#define EXAMPLE_LVGL_TASK_PRIORITY     2
 
 static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
@@ -61,236 +91,675 @@ static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, 
 
 static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
-    int offsetx1 = area->x1;
-    int offsetx2 = area->x2;
-    int offsety1 = area->y1;
-    int offsety2 = area->y2;
-    // 将缓冲区的内容复制到显示的特定区域
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
+    const int offsetx1 = area->x1;
+    const int offsetx2 = area->x2;
+    const int offsety1 = area->y1;
+    const int offsety2 = area->y2;
+
+#if LCD_BIT_PER_PIXEL == 24
+    uint8_t *to = (uint8_t *)color_map;
+    uint8_t temp = 0;
+    uint16_t pixel_num = (offsetx2 - offsetx1 + 1) * (offsety2 - offsety1 + 1);
+
+    // Special dealing for first pixel
+    temp = color_map[0].ch.blue;
+    *to++ = color_map[0].ch.red;
+    *to++ = color_map[0].ch.green;
+    *to++ = temp;
+    // Normal dealing for other pixels
+    for (int i = 1; i < pixel_num; i++) {
+        *to++ = color_map[i].ch.red;
+        *to++ = color_map[i].ch.green;
+        *to++ = color_map[i].ch.blue;
+    }
+#endif
+
+    // copy a buffer's content to a specific area of the display
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
 }
 
-/* 在 LVGL 中旋转屏幕时，旋转显示和触摸。 更新驱动程序参数时调用. */
-static void example_lvgl_port_update_callback(lv_disp_drv_t *drv)
+/* Rotate display and touch, when rotated screen in LVGL. Called when driver parameters are updated. */
+static void example_lvgl_update_cb(lv_disp_drv_t *drv)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
 
-    switch (drv->rotated)
-    {
+    switch (drv->rotated) {
     case LV_DISP_ROT_NONE:
-        // 旋转液晶显示屏
+        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
-        esp_lcd_panel_mirror(panel_handle, false, false);
-        // 旋转液晶触摸
+        esp_lcd_panel_mirror(panel_handle, true, false);
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+        // Rotate LCD touch
         esp_lcd_touch_set_mirror_y(tp, false);
         esp_lcd_touch_set_mirror_x(tp, false);
+#endif
         break;
     case LV_DISP_ROT_90:
-        // 旋转液晶显示屏
+        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, true);
-        esp_lcd_panel_mirror(panel_handle, false, true);
-        // 旋转液晶触摸
+        esp_lcd_panel_mirror(panel_handle, true, true);
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+        // Rotate LCD touch
         esp_lcd_touch_set_mirror_y(tp, false);
         esp_lcd_touch_set_mirror_x(tp, false);
+#endif
         break;
     case LV_DISP_ROT_180:
-        // 旋转液晶显示屏
+        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
-        esp_lcd_panel_mirror(panel_handle, true, true);
-        // 旋转液晶触摸
+        esp_lcd_panel_mirror(panel_handle, false, true);
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+        // Rotate LCD touch
         esp_lcd_touch_set_mirror_y(tp, false);
         esp_lcd_touch_set_mirror_x(tp, false);
+#endif
         break;
     case LV_DISP_ROT_270:
-        // 旋转液晶显示屏
+        // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, true);
-        esp_lcd_panel_mirror(panel_handle, true, false);
-        // 旋转液晶触摸
+        esp_lcd_panel_mirror(panel_handle, false, false);
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+        // Rotate LCD touch
         esp_lcd_touch_set_mirror_y(tp, false);
         esp_lcd_touch_set_mirror_x(tp, false);
+#endif
         break;
     }
 }
 
-static void example_lvgl_port_rounder_callback(struct _lv_disp_drv_t *disp_drv, lv_area_t *area)
+void example_lvgl_rounder_cb(struct _lv_disp_drv_t *disp_drv, lv_area_t *area)
 {
     uint16_t x1 = area->x1;
     uint16_t x2 = area->x2;
 
-    // 将区域的起始位置向下舍入到最接近的4N数字
-    area->x1 = (x1 >> 2) << 2;
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71 || CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
+    uint16_t y1 = area->y1;
+    uint16_t y2 = area->y2;
 
-    // 将区域末尾四舍五入到最接近的4M+3数字
+    // round the start of coordinate down to the nearest 2M number
+    area->x1 = (x1 >> 1) << 1;
+    area->y1 = (y1 >> 1) << 1;
+    // round the end of coordinate up to the nearest 2N+1 number
+    area->x2 = ((x2 >> 1) << 1) + 1;
+    area->y2 = ((y2 >> 1) << 1) + 1;
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+    // round the start of coordinate down to the nearest 4M number
+    area->x1 = (x1 >> 2) << 2;
+    // round the end of coordinate up to the nearest 4N+3 number
     area->x2 = ((x2 >> 2) << 2) + 3;
+#endif
 }
+
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+static SemaphoreHandle_t touch_mux = NULL;
 
 static void example_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
-    uint16_t touchpad_x[1] = {0};
-    uint16_t touchpad_y[1] = {0};
-    uint8_t touchpad_cnt = 0;
+    esp_lcd_touch_handle_t tp = (esp_lcd_touch_handle_t)drv->user_data;
+    assert(tp);
 
-    /* 读取触摸控制器数据 */
-    esp_lcd_touch_read_data(drv->user_data);
+    uint16_t tp_x;
+    uint16_t tp_y;
+    uint8_t tp_cnt = 0;
+    /* Read data from touch controller into memory */
+    // if (xSemaphoreTake(touch_mux, 0) == pdTRUE) {
+    //     esp_lcd_touch_read_data(tp);
+    // }
+    esp_lcd_touch_read_data(tp);
 
-    /* 获取坐标 */
-    bool touchpad_pressed = esp_lcd_touch_get_coordinates(drv->user_data, touchpad_x, touchpad_y, NULL, &touchpad_cnt, 1);
-
-    if (touchpad_pressed && touchpad_cnt > 0)
-    {
-
-        ESP_LOGI(TAG, "Touch x=%d,y=%d ", touchpad_x[0], touchpad_y[0]);
-        data->point.x = touchpad_x[0];
-        data->point.y = touchpad_y[0];
+    /* Read data from touch controller */
+    bool tp_pressed = esp_lcd_touch_get_coordinates(tp, &tp_x, &tp_y, NULL, &tp_cnt, 1);
+    if (tp_pressed && tp_cnt > 0) {
+        data->point.x = tp_x;
+        data->point.y = tp_y;
         data->state = LV_INDEV_STATE_PRESSED;
-    }
-    else
-    {
+        ESP_LOGD(TAG, "Touch position: %d,%d", tp_x, tp_y);
+    } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 
+static void example_touch_isr_cb(esp_lcd_touch_handle_t tp)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(touch_mux, &xHigherPriorityTaskWoken);
+
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
+}
+#endif
+
 static void example_increase_lvgl_tick(void *arg)
 {
-    /* 告诉LVGL已经过去了多少毫秒 */
+    /* Tell LVGL how many milliseconds has elapsed */
     lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
 }
 
+static bool example_lvgl_lock(int timeout_ms)
+{
+    assert(lvgl_mux && "bsp_display_start must be called first");
+
+    const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    return xSemaphoreTake(lvgl_mux, timeout_ticks) == pdTRUE;
+}
+
+static void example_lvgl_unlock(void)
+{
+    assert(lvgl_mux && "bsp_display_start must be called first");
+    xSemaphoreGive(lvgl_mux);
+}
+
+static void example_lvgl_port_task(void *arg)
+{
+    ESP_LOGI(TAG, "Starting LVGL task");
+    uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
+    while (1) {
+        // Lock the mutex due to the LVGL APIs are not thread-safe
+        if (example_lvgl_lock(-1)) {
+            task_delay_ms = lv_timer_handler();
+            // Release the mutex
+            example_lvgl_unlock();
+        }
+        if (task_delay_ms > EXAMPLE_LVGL_TASK_MAX_DELAY_MS) {
+            task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
+        } else if (task_delay_ms < EXAMPLE_LVGL_TASK_MIN_DELAY_MS) {
+            task_delay_ms = EXAMPLE_LVGL_TASK_MIN_DELAY_MS;
+        }
+        vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
+    }
+}
+
+//wea2012
+static const spd2010_lcd_init_cmd_t lcd_init_cmds[] = {
+//  {cmd, { data }, data_size, delay_ms}
+{0xFF, (uint8_t []){0x20, 0x10, 0x43}, 3, 0},
+{0x04, (uint8_t []){0x70}, 1, 0},
+
+ 
+{0xFF, (uint8_t []){0x20, 0x10, 0x10}, 3, 0},
+{0x0C, (uint8_t []){0x11}, 1, 0},
+{0x10, (uint8_t []){0x02}, 1, 0},
+{0x11, (uint8_t []){0x11}, 1, 0},
+{0x15, (uint8_t []){0x42}, 1, 0},
+{0x16, (uint8_t []){0x11}, 1, 0},
+{0x1A, (uint8_t []){0x02}, 1, 0},
+{0x1B, (uint8_t []){0x11}, 1, 0},
+{0x61, (uint8_t []){0x80}, 1, 0},
+{0x62, (uint8_t []){0x80}, 1, 0},
+{0x54, (uint8_t []){0x44}, 1, 0},
+{0x58, (uint8_t []){0x88}, 1, 0},
+{0x5C, (uint8_t []){0xcc}, 1, 0},
+{0x20, (uint8_t []){0x80}, 1, 0},
+{0x21, (uint8_t []){0x81}, 1, 0},
+{0x22, (uint8_t []){0x31}, 1, 0},
+{0x23, (uint8_t []){0x20}, 1, 0},
+{0x24, (uint8_t []){0x11}, 1, 0},
+{0x25, (uint8_t []){0x11}, 1, 0},
+{0x26, (uint8_t []){0x12}, 1, 0},
+{0x27, (uint8_t []){0x12}, 1, 0},
+{0x30, (uint8_t []){0x80}, 1, 0},
+{0x31, (uint8_t []){0x81}, 1, 0},
+{0x32, (uint8_t []){0x31}, 1, 0},
+{0x33, (uint8_t []){0x20}, 1, 0},
+{0x34, (uint8_t []){0x11}, 1, 0},
+{0x35, (uint8_t []){0x11}, 1, 0},
+{0x36, (uint8_t []){0x12}, 1, 0},
+{0x37, (uint8_t []){0x12}, 1, 0},
+{0x41, (uint8_t []){0x11}, 1, 0},
+{0x42, (uint8_t []){0x22}, 1, 0},
+{0x43, (uint8_t []){0x33}, 1, 0},
+{0x49, (uint8_t []){0x11}, 1, 0},
+{0x4A, (uint8_t []){0x22}, 1, 0},
+{0x4B, (uint8_t []){0x33}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x15}, 3, 0},
+{0x00, (uint8_t []){0x00}, 1, 0},
+{0x01, (uint8_t []){0x00}, 1, 0},
+{0x02, (uint8_t []){0x00}, 1, 0},
+{0x03, (uint8_t []){0x00}, 1, 0},
+{0x04, (uint8_t []){0x10}, 1, 0},
+{0x05, (uint8_t []){0x0C}, 1, 0},
+{0x06, (uint8_t []){0x23}, 1, 0},
+{0x07, (uint8_t []){0x22}, 1, 0},
+{0x08, (uint8_t []){0x21}, 1, 0},
+{0x09, (uint8_t []){0x20}, 1, 0},
+{0x0A, (uint8_t []){0x33}, 1, 0},
+{0x0B, (uint8_t []){0x32}, 1, 0},
+{0x0C, (uint8_t []){0x34}, 1, 0},
+{0x0D, (uint8_t []){0x35}, 1, 0},
+{0x0E, (uint8_t []){0x01}, 1, 0},
+{0x0F, (uint8_t []){0x01}, 1, 0},
+{0x20, (uint8_t []){0x00}, 1, 0},
+{0x21, (uint8_t []){0x00}, 1, 0},
+{0x22, (uint8_t []){0x00}, 1, 0},
+{0x23, (uint8_t []){0x00}, 1, 0},
+{0x24, (uint8_t []){0x0C}, 1, 0},
+{0x25, (uint8_t []){0x10}, 1, 0},
+{0x26, (uint8_t []){0x20}, 1, 0},
+{0x27, (uint8_t []){0x21}, 1, 0},
+{0x28, (uint8_t []){0x22}, 1, 0},
+{0x29, (uint8_t []){0x23}, 1, 0},
+{0x2A, (uint8_t []){0x33}, 1, 0},
+{0x2B, (uint8_t []){0x32}, 1, 0},
+{0x2C, (uint8_t []){0x34}, 1, 0},
+{0x2D, (uint8_t []){0x35}, 1, 0},
+{0x2E, (uint8_t []){0x01}, 1, 0},
+{0x2F, (uint8_t []){0x01}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x16}, 3, 0},
+{0x00, (uint8_t []){0x00}, 1, 0},
+{0x01, (uint8_t []){0x00}, 1, 0},
+{0x02, (uint8_t []){0x00}, 1, 0},
+{0x03, (uint8_t []){0x00}, 1, 0},
+{0x04, (uint8_t []){0x08}, 1, 0},
+{0x05, (uint8_t []){0x04}, 1, 0},
+{0x06, (uint8_t []){0x19}, 1, 0},
+{0x07, (uint8_t []){0x18}, 1, 0},
+{0x08, (uint8_t []){0x17}, 1, 0},
+{0x09, (uint8_t []){0x16}, 1, 0},
+{0x0A, (uint8_t []){0x33}, 1, 0},
+{0x0B, (uint8_t []){0x32}, 1, 0},
+{0x0C, (uint8_t []){0x34}, 1, 0},
+{0x0D, (uint8_t []){0x35}, 1, 0},
+{0x0E, (uint8_t []){0x01}, 1, 0},
+{0x0F, (uint8_t []){0x01}, 1, 0},
+{0x20, (uint8_t []){0x00}, 1, 0},
+{0x21, (uint8_t []){0x00}, 1, 0},
+{0x22, (uint8_t []){0x00}, 1, 0},
+{0x23, (uint8_t []){0x00}, 1, 0},
+{0x24, (uint8_t []){0x04}, 1, 0},
+{0x25, (uint8_t []){0x08}, 1, 0},
+{0x26, (uint8_t []){0x16}, 1, 0},
+{0x27, (uint8_t []){0x17}, 1, 0},
+{0x28, (uint8_t []){0x18}, 1, 0},
+{0x29, (uint8_t []){0x19}, 1, 0},
+{0x2A, (uint8_t []){0x33}, 1, 0},
+{0x2B, (uint8_t []){0x32}, 1, 0},
+{0x2C, (uint8_t []){0x34}, 1, 0},
+{0x2D, (uint8_t []){0x35}, 1, 0},
+{0x2E, (uint8_t []){0x01}, 1, 0},
+{0x2F, (uint8_t []){0x01}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
+{0x00, (uint8_t []){0x99}, 1, 0},
+{0x2A, (uint8_t []){0x28}, 1, 0},
+{0x2B, (uint8_t []){0x0f}, 1, 0},
+{0x2C, (uint8_t []){0x16}, 1, 0},
+{0x2D, (uint8_t []){0x28}, 1, 0},
+{0x2E, (uint8_t []){0x0f}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0xA0}, 3, 0},
+{0x08, (uint8_t []){0xdc}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x45}, 3, 0},
+{0x03, (uint8_t []){0x64}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x40}, 3, 0},
+{0x86, (uint8_t []){0x00}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x00}, 3, 0},
+{0x2A, (uint8_t []){0x00, 0x00, 0x01, 0x63}, 4, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x42}, 3, 0},
+{0x05, (uint8_t []){0x2c}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x11}, 3, 0},
+{0x50, (uint8_t []){0x01}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
+{0x0D, (uint8_t []){0x66}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x17}, 3, 0},
+{0x39, (uint8_t []){0x3c}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x31}, 3, 0},
+{0x00, (uint8_t []){0x00}, 1, 0},
+{0x01, (uint8_t []){0x00}, 1, 0},
+{0x02, (uint8_t []){0x00}, 1, 0},
+{0x03, (uint8_t []){0x09}, 1, 0},
+{0x04, (uint8_t []){0x00}, 1, 0},
+{0x05, (uint8_t []){0x1c}, 1, 0},
+{0x06, (uint8_t []){0x00}, 1, 0},
+{0x07, (uint8_t []){0x36}, 1, 0},
+{0x08, (uint8_t []){0x00}, 1, 0},
+{0x09, (uint8_t []){0x3d}, 1, 0},
+{0x0a, (uint8_t []){0x00}, 1, 0},
+{0x0b, (uint8_t []){0x54}, 1, 0},
+{0x0c, (uint8_t []){0x00}, 1, 0},
+{0x0d, (uint8_t []){0x62}, 1, 0},
+{0x0e, (uint8_t []){0x00}, 1, 0},
+{0x0f, (uint8_t []){0x72}, 1, 0},
+{0x10, (uint8_t []){0x00}, 1, 0},
+{0x11, (uint8_t []){0x79}, 1, 0},
+{0x12, (uint8_t []){0x00}, 1, 0},
+{0x13, (uint8_t []){0xa6}, 1, 0},
+{0x14, (uint8_t []){0x00}, 1, 0},
+{0x15, (uint8_t []){0xd0}, 1, 0},
+{0x16, (uint8_t []){0x01}, 1, 0},
+{0x17, (uint8_t []){0x0e}, 1, 0},
+{0x18, (uint8_t []){0x01}, 1, 0},
+{0x19, (uint8_t []){0x3d}, 1, 0},
+{0x1a, (uint8_t []){0x01}, 1, 0},
+{0x1b, (uint8_t []){0x7b}, 1, 0},
+{0x1c, (uint8_t []){0x01}, 1, 0},
+{0x1d, (uint8_t []){0xcf}, 1, 0},
+{0x1e, (uint8_t []){0x02}, 1, 0},
+{0x1f, (uint8_t []){0x0E}, 1, 0},
+{0x20, (uint8_t []){0x02}, 1, 0},
+{0x21, (uint8_t []){0x53}, 1, 0},
+{0x22, (uint8_t []){0x02}, 1, 0},
+{0x23, (uint8_t []){0x80}, 1, 0},
+{0x24, (uint8_t []){0x02}, 1, 0},
+{0x25, (uint8_t []){0xC2}, 1, 0},
+{0x26, (uint8_t []){0x02}, 1, 0},
+{0x27, (uint8_t []){0xFA}, 1, 0},
+{0x28, (uint8_t []){0x03}, 1, 0},
+{0x29, (uint8_t []){0x3E}, 1, 0},
+{0x2a, (uint8_t []){0x03}, 1, 0},
+{0x2b, (uint8_t []){0x52}, 1, 0},
+{0x2c, (uint8_t []){0x03}, 1, 0},
+{0x2d, (uint8_t []){0x70}, 1, 0},
+{0x2e, (uint8_t []){0x03}, 1, 0},
+{0x2f, (uint8_t []){0x8E}, 1, 0},
+{0x30, (uint8_t []){0x03}, 1, 0},
+{0x31, (uint8_t []){0xA2}, 1, 0},
+{0x32, (uint8_t []){0x03}, 1, 0},
+{0x33, (uint8_t []){0xBA}, 1, 0},
+{0x34, (uint8_t []){0x03}, 1, 0},
+{0x35, (uint8_t []){0xCF}, 1, 0},
+{0x36, (uint8_t []){0x03}, 1, 0},
+{0x37, (uint8_t []){0xe8}, 1, 0},
+{0x38, (uint8_t []){0x03}, 1, 0},
+{0x39, (uint8_t []){0xf0}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x32}, 3, 0},
+{0x00, (uint8_t []){0x00}, 1, 0},
+{0x01, (uint8_t []){0x00}, 1, 0},
+{0x02, (uint8_t []){0x00}, 1, 0},
+{0x03, (uint8_t []){0x09}, 1, 0},
+{0x04, (uint8_t []){0x00}, 1, 0},
+{0x05, (uint8_t []){0x1c}, 1, 0},
+{0x06, (uint8_t []){0x00}, 1, 0},
+{0x07, (uint8_t []){0x36}, 1, 0},
+{0x08, (uint8_t []){0x00}, 1, 0},
+{0x09, (uint8_t []){0x3d}, 1, 0},
+{0x0a, (uint8_t []){0x00}, 1, 0},
+{0x0b, (uint8_t []){0x54}, 1, 0},
+{0x0c, (uint8_t []){0x00}, 1, 0},
+{0x0d, (uint8_t []){0x62}, 1, 0},
+{0x0e, (uint8_t []){0x00}, 1, 0},
+{0x0f, (uint8_t []){0x72}, 1, 0},
+{0x10, (uint8_t []){0x00}, 1, 0},
+{0x11, (uint8_t []){0x79}, 1, 0},
+{0x12, (uint8_t []){0x00}, 1, 0},
+{0x13, (uint8_t []){0xa6}, 1, 0},
+{0x14, (uint8_t []){0x00}, 1, 0},
+{0x15, (uint8_t []){0xd0}, 1, 0},
+{0x16, (uint8_t []){0x01}, 1, 0},
+{0x17, (uint8_t []){0x0e}, 1, 0},
+{0x18, (uint8_t []){0x01}, 1, 0},
+{0x19, (uint8_t []){0x3d}, 1, 0},
+{0x1a, (uint8_t []){0x01}, 1, 0},
+{0x1b, (uint8_t []){0x7b}, 1, 0},
+{0x1c, (uint8_t []){0x01}, 1, 0},
+{0x1d, (uint8_t []){0xcf}, 1, 0},
+{0x1e, (uint8_t []){0x02}, 1, 0},
+{0x1f, (uint8_t []){0x0E}, 1, 0},
+{0x20, (uint8_t []){0x02}, 1, 0},
+{0x21, (uint8_t []){0x53}, 1, 0},
+{0x22, (uint8_t []){0x02}, 1, 0},
+{0x23, (uint8_t []){0x80}, 1, 0},
+{0x24, (uint8_t []){0x02}, 1, 0},
+{0x25, (uint8_t []){0xC2}, 1, 0},
+{0x26, (uint8_t []){0x02}, 1, 0},
+{0x27, (uint8_t []){0xFA}, 1, 0},
+{0x28, (uint8_t []){0x03}, 1, 0},
+{0x29, (uint8_t []){0x3E}, 1, 0},
+{0x2a, (uint8_t []){0x03}, 1, 0},
+{0x2b, (uint8_t []){0x52}, 1, 0},
+{0x2c, (uint8_t []){0x03}, 1, 0},
+{0x2d, (uint8_t []){0x70}, 1, 0},
+{0x2e, (uint8_t []){0x03}, 1, 0},
+{0x2f, (uint8_t []){0x8E}, 1, 0},
+{0x30, (uint8_t []){0x03}, 1, 0},
+{0x31, (uint8_t []){0xA2}, 1, 0},
+{0x32, (uint8_t []){0x03}, 1, 0},
+{0x33, (uint8_t []){0xBA}, 1, 0},
+{0x34, (uint8_t []){0x03}, 1, 0},
+{0x35, (uint8_t []){0xCF}, 1, 0},
+{0x36, (uint8_t []){0x03}, 1, 0},
+{0x37, (uint8_t []){0xe8}, 1, 0},
+{0x38, (uint8_t []){0x03}, 1, 0},
+{0x39, (uint8_t []){0xf0}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x11}, 3, 0},
+{0x60, (uint8_t []){0x01}, 1, 0},
+{0x65, (uint8_t []){0x03}, 1, 0},
+{0x66, (uint8_t []){0x38}, 1, 0},
+{0x67, (uint8_t []){0x04}, 1, 0},
+{0x68, (uint8_t []){0x34}, 1, 0},
+{0x69, (uint8_t []){0x03}, 1, 0},
+{0x61, (uint8_t []){0x03}, 1, 0},
+{0x62, (uint8_t []){0x38}, 1, 0},
+{0x63, (uint8_t []){0x04}, 1, 0},
+{0x64, (uint8_t []){0x34}, 1, 0},
+{0x0A, (uint8_t []){0x11}, 1, 0},
+{0x0B, (uint8_t []){0x14}, 1, 0},
+{0x0c, (uint8_t []){0x14}, 1, 0},
+{0x55, (uint8_t []){0x06}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x42}, 3, 0},
+{0x05, (uint8_t []){0x3D}, 1, 0},
+{0x06, (uint8_t []){0x03}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
+{0x1f, (uint8_t []){0xdc}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x17}, 3, 0},
+{0x11, (uint8_t []){0xAA}, 1, 0},
+{0x16, (uint8_t []){0x12}, 1, 0},
+{0x0B, (uint8_t []){0xC3}, 1, 0},
+{0x10, (uint8_t []){0x0E}, 1, 0},
+{0x14, (uint8_t []){0xAA}, 1, 0},
+{0x18, (uint8_t []){0xA0}, 1, 0},
+{0x1A, (uint8_t []){0x80}, 1, 0},
+{0x1F, (uint8_t []){0x80}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x11}, 3, 0},
+{0x30, (uint8_t []){0xEE}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
+{0x15, (uint8_t []){0x0F}, 1, 0},
+{0x10, (uint8_t []){0x0F}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x40}, 3, 0},
+{0x83, (uint8_t []){0xC4}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x2d}, 3, 0},
+{0x01, (uint8_t []){0x3e}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
+{0x2B, (uint8_t []){0x1e}, 1, 0},
+{0x2C, (uint8_t []){0x26}, 1, 0},
+{0x2E, (uint8_t []){0x1e}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x18}, 3, 0},
+{0x01, (uint8_t []){0x01}, 1, 0},
+{0x00, (uint8_t []){0x1E}, 1, 0},
+{0xFF, (uint8_t []){0x20, 0x10, 0x43}, 3, 0},
+{0x03, (uint8_t []){0x04}, 1, 0},
+//touch For I2C
+{0xFF, (uint8_t []){0x20, 0x10, 0x50}, 3, 0},
+{0x05, (uint8_t []){0x00}, 1, 0},
+{0x00, (uint8_t []){0xA6}, 1, 0},
+{0x01, (uint8_t []){0xA6}, 1, 0},
+{0x08, (uint8_t []){0x55}, 1, 0},
+
+
+{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
+{0x21, (uint8_t []){0xB4}, 1, 0}, //set vcom
+{0xFF, (uint8_t []){0x20, 0x10, 0x00}, 3, 0},
+// ADD FOR QSPI/TP TEST
+//{0x3A, (uint8_t []){0x05}, 1, 0},
+
+{0x11, (uint8_t []){0x00}, 0, 0},
+{0x29, (uint8_t []){0x00}, 0, 0},
+};
+
 void app_main(void)
 {
-    static lv_disp_draw_buf_t disp_buf; // 包含称为绘制缓冲区的内部图形缓冲区
-    static lv_disp_drv_t disp_drv;      // 包含回调函数
+    static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
+    static lv_disp_drv_t disp_drv;      // contains callback functions
 
     ESP_LOGI(TAG, "Turn off LCD backlight");
     gpio_config_t bk_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << EXAMPLE_PIN_NUM_BK_LIGHT};
+        .pin_bit_mask = 1ULL << EXAMPLE_PIN_NUM_BK_LIGHT
+    };
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
 
     ESP_LOGI(TAG, "Initialize SPI bus");
-
-    spi_bus_config_t buscfg = {
-        .sclk_io_num = EXAMPLE_PIN_NUM_SCLK,
-        .data0_io_num = EXAMPLE_PIN_NUM_D0,
-        .data1_io_num = EXAMPLE_PIN_NUM_D1,
-        .data2_io_num = EXAMPLE_PIN_NUM_D2,
-        .data3_io_num = EXAMPLE_PIN_NUM_D3,
-        .max_transfer_sz = EXAMPLE_LCD_H_RES * 80 * sizeof(uint16_t),
-        .flags = SPICOMMON_BUSFLAG_QUAD,
-    };
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71
+    const spi_bus_config_t buscfg = GC9B71_PANEL_BUS_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_PCLK, EXAMPLE_PIN_NUM_LCD_DATA0,
+                                                                 EXAMPLE_PIN_NUM_LCD_DATA1, EXAMPLE_PIN_NUM_LCD_DATA2,
+                                                                 EXAMPLE_PIN_NUM_LCD_DATA3);
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+    const spi_bus_config_t buscfg = SPD2010_PANEL_BUS_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_PCLK, EXAMPLE_PIN_NUM_LCD_DATA0,
+                                                                  EXAMPLE_PIN_NUM_LCD_DATA1, EXAMPLE_PIN_NUM_LCD_DATA2,
+                                                                  EXAMPLE_PIN_NUM_LCD_DATA3);
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
+    const spi_bus_config_t buscfg = SH8601_PANEL_BUS_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_PCLK, EXAMPLE_PIN_NUM_LCD_DATA0,
+                                                                 EXAMPLE_PIN_NUM_LCD_DATA1, EXAMPLE_PIN_NUM_LCD_DATA2,
+                                                                 EXAMPLE_PIN_NUM_LCD_DATA3);
+#endif
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
     ESP_LOGI(TAG, "Install panel IO");
     esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .cs_gpio_num = EXAMPLE_PIN_NUM_LCD_CS,
-        .pclk_hz = EXAMPLE_LCD_PIXEL_CLOCK_HZ,
-        .lcd_cmd_bits = EXAMPLE_LCD_CMD_BITS,
-        .lcd_param_bits = EXAMPLE_LCD_PARAM_BITS,
-        .spi_mode = 0,
-        .trans_queue_depth = 10,
-        .on_color_trans_done = example_notify_lvgl_flush_ready,
-        .user_ctx = &disp_drv,
+
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71
+    const esp_lcd_panel_io_spi_config_t io_config = GC9B71_PANEL_IO_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_CS,
+                                                                                example_notify_lvgl_flush_ready,
+                                                                                &disp_drv);
+    gc9b71_vendor_config_t vendor_config = {
+        .flags = {
+            .use_qspi_interface = 1,
+        },
     };
-    // 将LCD连接到SPI总线
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+    const esp_lcd_panel_io_spi_config_t io_config = SPD2010_PANEL_IO_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_CS,
+                                                                                example_notify_lvgl_flush_ready,
+                                                                                &disp_drv);
+    spd2010_vendor_config_t vendor_config = {
+        .init_cmds = lcd_init_cmds,         // Uncomment these line if use custom initialization commands
+        .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(spd2010_lcd_init_cmd_t),
+        .flags = {
+            .use_qspi_interface = 1,
+        },
+    };
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
+    const esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_CS,
+                                                                                example_notify_lvgl_flush_ready,
+                                                                                &disp_drv);
+    sh8601_vendor_config_t vendor_config = {
+        .flags = {
+            .use_qspi_interface = 1,
+        },
+    };
+#endif
+    // Attach the LCD to the SPI bus
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &io_handle));
 
     esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_panel_dev_config_t panel_config = {
+    const esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = EXAMPLE_PIN_NUM_LCD_RST,
-        .rgb_endian = LCD_RGB_ENDIAN_RGB,
-        .bits_per_pixel = 16,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = LCD_BIT_PER_PIXEL,
+        .vendor_config = &vendor_config,
     };
-
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_qspi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &io_handle));
-
-    ESP_LOGI(TAG, "Install WEA2012 panel driver");
-    ESP_ERROR_CHECK(esp_lcd_new_panel_wea2012(io_handle, &panel_config, &panel_handle));
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71
+    ESP_LOGI(TAG, "Install GC9B71 panel driver");
+    ESP_ERROR_CHECK(esp_lcd_new_panel_gc9b71(io_handle, &panel_config, &panel_handle));
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+    ESP_LOGI(TAG, "Install SPD2010 panel driver");
+    ESP_ERROR_CHECK(esp_lcd_new_panel_spd2010(io_handle, &panel_config, &panel_handle));
+#elif CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
+    ESP_LOGI(TAG, "Install SH8601 panel driver");
+    ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(io_handle, &panel_config, &panel_handle));
+#endif
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-
-    //  ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
-    // esp_lcd_panel_swap_xy(panel_handle, true);
-    // esp_lcd_panel_mirror(panel_handle, true, false);
-
-    // 在打开屏幕或背光之前，用户可以将预定义的图案刷新到屏幕上
+    // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
-    esp_lcd_touch_handle_t tp = NULL;
-    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
-
-    ESP_LOGI(TAG, "Initialize I2C");
-
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+    ESP_LOGI(TAG, "Initialize I2C bus");
     const i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
-        .sda_io_num = EXAMPLE_I2C_SDA,
-        .scl_io_num = EXAMPLE_I2C_SCL,
+        .sda_io_num = EXAMPLE_PIN_NUM_TOUCH_SDA,
         .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_io_num = EXAMPLE_PIN_NUM_TOUCH_SCL,
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = 400000,
+        .master.clk_speed = 400 * 1000,
     };
-    /* 初始化I2C */
-    ESP_ERROR_CHECK(i2c_param_config(EXAMPLE_I2C_NUM, &i2c_conf));
-    ESP_ERROR_CHECK(i2c_driver_install(EXAMPLE_I2C_NUM, i2c_conf.mode, 0, 0, 0));
+    ESP_ERROR_CHECK(i2c_param_config(TOUCH_HOST, &i2c_conf));
+    ESP_ERROR_CHECK(i2c_driver_install(TOUCH_HOST, i2c_conf.mode, 0, 0, 0));
 
-    esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_WEA2012_CONFIG();
+    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
+#if CONFIG_EXAMPLE_LCD_TOUCH_CONTROLLER_SPD2010
+    const esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_SPD2010_CONFIG();
+#elif CONFIG_EXAMPLE_LCD_TOUCH_CONTROLLER_CST816S
+    const esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
+#endif
+    // Attach the TOUCH to the I2C bus
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)TOUCH_HOST, &tp_io_config, &tp_io_handle));
 
-    ESP_LOGI(TAG, "Initialize touch IO (I2C)");
+    touch_mux = xSemaphoreCreateBinary();
+    assert(touch_mux);
 
-    /* Touch IO handle */
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)EXAMPLE_I2C_NUM, &tp_io_config, &tp_io_handle));
-
-    esp_lcd_touch_config_t tp_cfg = {
-        .x_max = EXAMPLE_LCD_V_RES,
-        .y_max = EXAMPLE_LCD_H_RES,
-        .rst_gpio_num = EXAMPLE_PIN_NUM_TP_RST,
-        .int_gpio_num = EXAMPLE_PIN_NUM_TP_INT,
+    const esp_lcd_touch_config_t tp_cfg = {
+        .x_max = EXAMPLE_LCD_H_RES,
+        .y_max = EXAMPLE_LCD_V_RES,
+        .rst_gpio_num = EXAMPLE_PIN_NUM_TOUCH_RST,
+        .int_gpio_num = EXAMPLE_PIN_NUM_TOUCH_INT,
+        .levels = {
+            .reset = 0,
+            .interrupt = 0,
+        },
         .flags = {
             .swap_xy = 0,
             .mirror_x = 0,
             .mirror_y = 0,
         },
+        .interrupt_callback = example_touch_isr_cb,
     };
 
-    /* 初始化触摸 */
-    ESP_LOGI(TAG, "Initialize touch controller WEA2012");
-    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_wea2012(tp_io_handle, &tp_cfg, &tp));
+#if CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
+    ESP_LOGI(TAG, "Initialize touch controller SPD2010");
+    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_spd2010(tp_io_handle, &tp_cfg, &tp));
+#elif CONFIG_EXAMPLE_LCD_TOUCH_CONTROLLER_CST816S
+    ESP_LOGI(TAG, "Initialize touch controller CST816S");
+    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_cst816s(tp_io_handle, &tp_cfg, &tp));
+#endif
+#endif // CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
 
     ESP_LOGI(TAG, "Turn on LCD backlight");
     gpio_set_level(EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
-    // 分配 LVGL 使用的绘制缓冲区
-    // 建议选择绘制缓冲区的大小至少为屏幕大小的 1/10
-    lv_color_t *buf1 = heap_caps_malloc(EXAMPLE_LCD_H_RES * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    // alloc draw buffers used by LVGL
+    // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
+    lv_color_t *buf1 = heap_caps_malloc(EXAMPLE_LCD_H_RES * 10 * sizeof(lv_color_t), MALLOC_CAP_DMA);
     assert(buf1);
-    lv_color_t *buf2 = heap_caps_malloc(EXAMPLE_LCD_H_RES * 20 * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    lv_color_t *buf2 = heap_caps_malloc(EXAMPLE_LCD_H_RES * 10 * sizeof(lv_color_t), MALLOC_CAP_DMA);
     assert(buf2);
-    // 初始化 LVGL 绘制缓冲区
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_LCD_H_RES * 20);
+    // initialize LVGL draw buffers
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_LCD_H_RES * 10);
 
     ESP_LOGI(TAG, "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = EXAMPLE_LCD_H_RES;
     disp_drv.ver_res = EXAMPLE_LCD_V_RES;
     disp_drv.flush_cb = example_lvgl_flush_cb;
-    disp_drv.drv_update_cb = example_lvgl_port_update_callback;
-    disp_drv.rounder_cb = example_lvgl_port_rounder_callback;
+    disp_drv.rounder_cb = example_lvgl_rounder_cb;
+    disp_drv.drv_update_cb = example_lvgl_update_cb;
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
 
     ESP_LOGI(TAG, "Install LVGL tick timer");
-    // LVGL 的 Tick 接口（使用 esp_timer 生成 2ms 周期性事件）
+    // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &example_increase_lvgl_tick,
-        .name = "lvgl_tick"};
+        .name = "lvgl_tick"
+    };
     esp_timer_handle_t lvgl_tick_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
 
-    static lv_indev_drv_t indev_drv; // 输入设备驱动程序（触摸）
+#if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
+    static lv_indev_drv_t indev_drv;    // Input device driver (Touch)
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.disp = disp;
@@ -298,17 +767,23 @@ void app_main(void)
     indev_drv.user_data = tp;
 
     lv_indev_drv_register(&indev_drv);
+#else
+    (void)disp;
+#endif
 
-    ESP_LOGI(TAG, "Display LVGL Meter Widget");
-    lv_demo_widgets();
-    // lv_demo_benchmark(); //基准测试
-    // lv_demo_music();
+    lvgl_mux = xSemaphoreCreateMutex();
+    assert(lvgl_mux);
+    xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
 
-    while (1)
-    {
-        // 提高 LVGL 的任务优先级和/或减少处理程序周期可以提高性能
-        vTaskDelay(pdMS_TO_TICKS(10));
-        // 运行 lv_timer_handler 的任务的优先级应该低于运行 `lv_tick_inc` 的任务
-        lv_timer_handler();
+    ESP_LOGI(TAG, "Display LVGL demos");
+    // Lock the mutex due to the LVGL APIs are not thread-safe
+    if (example_lvgl_lock(-1)) {
+        lv_demo_widgets();      /* A widgets example */
+        // lv_demo_music();        /* A modern, smartphone-like music player demo. */
+        // lv_demo_stress();       /* A stress test for LVGL. */
+        // lv_demo_benchmark();    /* A demo to measure the performance of LVGL or to compare different settings. */
+
+        // Release the mutex
+        example_lvgl_unlock();
     }
 }
