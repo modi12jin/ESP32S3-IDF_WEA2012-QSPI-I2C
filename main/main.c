@@ -32,55 +32,55 @@
 static const char *TAG = "example";
 static SemaphoreHandle_t lvgl_mux = NULL;
 
-#define LCD_HOST    SPI2_HOST
-#define TOUCH_HOST  I2C_NUM_0
+#define LCD_HOST SPI2_HOST
+#define TOUCH_HOST I2C_NUM_0
 
 #if CONFIG_LV_COLOR_DEPTH == 32
-#define LCD_BIT_PER_PIXEL       (24)
+#define LCD_BIT_PER_PIXEL (24)
 #elif CONFIG_LV_COLOR_DEPTH == 16
-#define LCD_BIT_PER_PIXEL       (16)
+#define LCD_BIT_PER_PIXEL (16)
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////// Please update the following configuration according to your LCD spec //////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define EXAMPLE_LCD_BK_LIGHT_ON_LEVEL  1
+#define EXAMPLE_LCD_BK_LIGHT_ON_LEVEL 1
 #define EXAMPLE_LCD_BK_LIGHT_OFF_LEVEL !EXAMPLE_LCD_BK_LIGHT_ON_LEVEL
-#define EXAMPLE_PIN_NUM_LCD_CS            (GPIO_NUM_10)
-#define EXAMPLE_PIN_NUM_LCD_PCLK          (GPIO_NUM_5)
-#define EXAMPLE_PIN_NUM_LCD_DATA0         (GPIO_NUM_14)
-#define EXAMPLE_PIN_NUM_LCD_DATA1         (GPIO_NUM_8)
-#define EXAMPLE_PIN_NUM_LCD_DATA2         (GPIO_NUM_0)
-#define EXAMPLE_PIN_NUM_LCD_DATA3         (GPIO_NUM_1)
-#define EXAMPLE_PIN_NUM_LCD_RST           (GPIO_NUM_6)
-#define EXAMPLE_PIN_NUM_BK_LIGHT          (GPIO_NUM_13)
+#define EXAMPLE_PIN_NUM_LCD_CS (GPIO_NUM_10)
+#define EXAMPLE_PIN_NUM_LCD_PCLK (GPIO_NUM_5)
+#define EXAMPLE_PIN_NUM_LCD_DATA0 (GPIO_NUM_14)
+#define EXAMPLE_PIN_NUM_LCD_DATA1 (GPIO_NUM_8)
+#define EXAMPLE_PIN_NUM_LCD_DATA2 (GPIO_NUM_0)
+#define EXAMPLE_PIN_NUM_LCD_DATA3 (GPIO_NUM_1)
+#define EXAMPLE_PIN_NUM_LCD_RST (GPIO_NUM_6)
+#define EXAMPLE_PIN_NUM_BK_LIGHT (GPIO_NUM_13)
 
 // The pixel number in horizontal and vertical
 #if CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
-#define EXAMPLE_LCD_H_RES              356
-#define EXAMPLE_LCD_V_RES              400
+#define EXAMPLE_LCD_H_RES 356
+#define EXAMPLE_LCD_V_RES 400
 #elif CONFIG_EXAMPLE_LCD_CONTROLLER_GC9B71
-#define EXAMPLE_LCD_H_RES              320
-#define EXAMPLE_LCD_V_RES              386
+#define EXAMPLE_LCD_H_RES 320
+#define EXAMPLE_LCD_V_RES 386
 #elif CONFIG_EXAMPLE_LCD_CONTROLLER_SH8601
-#define EXAMPLE_LCD_H_RES              454
-#define EXAMPLE_LCD_V_RES              454
+#define EXAMPLE_LCD_H_RES 454
+#define EXAMPLE_LCD_V_RES 454
 #endif
 
 #if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
-#define EXAMPLE_PIN_NUM_TOUCH_SCL         (GPIO_NUM_9)
-#define EXAMPLE_PIN_NUM_TOUCH_SDA         (GPIO_NUM_3)
-#define EXAMPLE_PIN_NUM_TOUCH_RST         (GPIO_NUM_4)
-#define EXAMPLE_PIN_NUM_TOUCH_INT         (GPIO_NUM_11)
+#define EXAMPLE_PIN_NUM_TOUCH_SCL (GPIO_NUM_9)
+#define EXAMPLE_PIN_NUM_TOUCH_SDA (GPIO_NUM_3)
+#define EXAMPLE_PIN_NUM_TOUCH_RST (GPIO_NUM_4)
+#define EXAMPLE_PIN_NUM_TOUCH_INT (GPIO_NUM_11)
 
 esp_lcd_touch_handle_t tp = NULL;
 #endif
 
-#define EXAMPLE_LVGL_TICK_PERIOD_MS    2
+#define EXAMPLE_LVGL_TICK_PERIOD_MS 2
 #define EXAMPLE_LVGL_TASK_MAX_DELAY_MS 500
 #define EXAMPLE_LVGL_TASK_MIN_DELAY_MS 1
-#define EXAMPLE_LVGL_TASK_STACK_SIZE   (4 * 1024)
-#define EXAMPLE_LVGL_TASK_PRIORITY     2
+#define EXAMPLE_LVGL_TASK_STACK_SIZE (4 * 1024)
+#define EXAMPLE_LVGL_TASK_PRIORITY 2
 
 static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
@@ -91,7 +91,7 @@ static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, 
 
 static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
     const int offsetx1 = area->x1;
     const int offsetx2 = area->x2;
     const int offsety1 = area->y1;
@@ -108,7 +108,8 @@ static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
     *to++ = color_map[0].ch.green;
     *to++ = temp;
     // Normal dealing for other pixels
-    for (int i = 1; i < pixel_num; i++) {
+    for (int i = 1; i < pixel_num; i++)
+    {
         *to++ = color_map[i].ch.red;
         *to++ = color_map[i].ch.green;
         *to++ = color_map[i].ch.blue;
@@ -122,9 +123,10 @@ static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
 /* Rotate display and touch, when rotated screen in LVGL. Called when driver parameters are updated. */
 static void example_lvgl_update_cb(lv_disp_drv_t *drv)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
 
-    switch (drv->rotated) {
+    switch (drv->rotated)
+    {
     case LV_DISP_ROT_NONE:
         // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
@@ -210,12 +212,15 @@ static void example_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
 
     /* Read data from touch controller */
     bool tp_pressed = esp_lcd_touch_get_coordinates(tp, &tp_x, &tp_y, NULL, &tp_cnt, 1);
-    if (tp_pressed && tp_cnt > 0) {
+    if (tp_pressed && tp_cnt > 0)
+    {
         data->point.x = tp_x;
         data->point.y = tp_y;
         data->state = LV_INDEV_STATE_PRESSED;
         ESP_LOGD(TAG, "Touch position: %d,%d", tp_x, tp_y);
-    } else {
+    }
+    else
+    {
         data->state = LV_INDEV_STATE_RELEASED;
     }
 }
@@ -225,7 +230,8 @@ static void example_touch_isr_cb(esp_lcd_touch_handle_t tp)
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     xSemaphoreGiveFromISR(touch_mux, &xHigherPriorityTaskWoken);
 
-    if (xHigherPriorityTaskWoken) {
+    if (xHigherPriorityTaskWoken)
+    {
         portYIELD_FROM_ISR();
     }
 }
@@ -255,334 +261,337 @@ static void example_lvgl_port_task(void *arg)
 {
     ESP_LOGI(TAG, "Starting LVGL task");
     uint32_t task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
-    while (1) {
+    while (1)
+    {
         // Lock the mutex due to the LVGL APIs are not thread-safe
-        if (example_lvgl_lock(-1)) {
+        if (example_lvgl_lock(-1))
+        {
             task_delay_ms = lv_timer_handler();
             // Release the mutex
             example_lvgl_unlock();
         }
-        if (task_delay_ms > EXAMPLE_LVGL_TASK_MAX_DELAY_MS) {
+        if (task_delay_ms > EXAMPLE_LVGL_TASK_MAX_DELAY_MS)
+        {
             task_delay_ms = EXAMPLE_LVGL_TASK_MAX_DELAY_MS;
-        } else if (task_delay_ms < EXAMPLE_LVGL_TASK_MIN_DELAY_MS) {
+        }
+        else if (task_delay_ms < EXAMPLE_LVGL_TASK_MIN_DELAY_MS)
+        {
             task_delay_ms = EXAMPLE_LVGL_TASK_MIN_DELAY_MS;
         }
         vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
 
-//wea2012
+// wea2012
 static const spd2010_lcd_init_cmd_t lcd_init_cmds[] = {
-//  {cmd, { data }, data_size, delay_ms}
-{0xFF, (uint8_t []){0x20, 0x10, 0x43}, 3, 0},
-{0x04, (uint8_t []){0x70}, 1, 0},
+    //  {cmd, { data }, data_size, delay_ms}
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x43}, 3, 0},
+    {0x04, (uint8_t[]){0x70}, 1, 0},
 
- 
-{0xFF, (uint8_t []){0x20, 0x10, 0x10}, 3, 0},
-{0x0C, (uint8_t []){0x11}, 1, 0},
-{0x10, (uint8_t []){0x02}, 1, 0},
-{0x11, (uint8_t []){0x11}, 1, 0},
-{0x15, (uint8_t []){0x42}, 1, 0},
-{0x16, (uint8_t []){0x11}, 1, 0},
-{0x1A, (uint8_t []){0x02}, 1, 0},
-{0x1B, (uint8_t []){0x11}, 1, 0},
-{0x61, (uint8_t []){0x80}, 1, 0},
-{0x62, (uint8_t []){0x80}, 1, 0},
-{0x54, (uint8_t []){0x44}, 1, 0},
-{0x58, (uint8_t []){0x88}, 1, 0},
-{0x5C, (uint8_t []){0xcc}, 1, 0},
-{0x20, (uint8_t []){0x80}, 1, 0},
-{0x21, (uint8_t []){0x81}, 1, 0},
-{0x22, (uint8_t []){0x31}, 1, 0},
-{0x23, (uint8_t []){0x20}, 1, 0},
-{0x24, (uint8_t []){0x11}, 1, 0},
-{0x25, (uint8_t []){0x11}, 1, 0},
-{0x26, (uint8_t []){0x12}, 1, 0},
-{0x27, (uint8_t []){0x12}, 1, 0},
-{0x30, (uint8_t []){0x80}, 1, 0},
-{0x31, (uint8_t []){0x81}, 1, 0},
-{0x32, (uint8_t []){0x31}, 1, 0},
-{0x33, (uint8_t []){0x20}, 1, 0},
-{0x34, (uint8_t []){0x11}, 1, 0},
-{0x35, (uint8_t []){0x11}, 1, 0},
-{0x36, (uint8_t []){0x12}, 1, 0},
-{0x37, (uint8_t []){0x12}, 1, 0},
-{0x41, (uint8_t []){0x11}, 1, 0},
-{0x42, (uint8_t []){0x22}, 1, 0},
-{0x43, (uint8_t []){0x33}, 1, 0},
-{0x49, (uint8_t []){0x11}, 1, 0},
-{0x4A, (uint8_t []){0x22}, 1, 0},
-{0x4B, (uint8_t []){0x33}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x15}, 3, 0},
-{0x00, (uint8_t []){0x00}, 1, 0},
-{0x01, (uint8_t []){0x00}, 1, 0},
-{0x02, (uint8_t []){0x00}, 1, 0},
-{0x03, (uint8_t []){0x00}, 1, 0},
-{0x04, (uint8_t []){0x10}, 1, 0},
-{0x05, (uint8_t []){0x0C}, 1, 0},
-{0x06, (uint8_t []){0x23}, 1, 0},
-{0x07, (uint8_t []){0x22}, 1, 0},
-{0x08, (uint8_t []){0x21}, 1, 0},
-{0x09, (uint8_t []){0x20}, 1, 0},
-{0x0A, (uint8_t []){0x33}, 1, 0},
-{0x0B, (uint8_t []){0x32}, 1, 0},
-{0x0C, (uint8_t []){0x34}, 1, 0},
-{0x0D, (uint8_t []){0x35}, 1, 0},
-{0x0E, (uint8_t []){0x01}, 1, 0},
-{0x0F, (uint8_t []){0x01}, 1, 0},
-{0x20, (uint8_t []){0x00}, 1, 0},
-{0x21, (uint8_t []){0x00}, 1, 0},
-{0x22, (uint8_t []){0x00}, 1, 0},
-{0x23, (uint8_t []){0x00}, 1, 0},
-{0x24, (uint8_t []){0x0C}, 1, 0},
-{0x25, (uint8_t []){0x10}, 1, 0},
-{0x26, (uint8_t []){0x20}, 1, 0},
-{0x27, (uint8_t []){0x21}, 1, 0},
-{0x28, (uint8_t []){0x22}, 1, 0},
-{0x29, (uint8_t []){0x23}, 1, 0},
-{0x2A, (uint8_t []){0x33}, 1, 0},
-{0x2B, (uint8_t []){0x32}, 1, 0},
-{0x2C, (uint8_t []){0x34}, 1, 0},
-{0x2D, (uint8_t []){0x35}, 1, 0},
-{0x2E, (uint8_t []){0x01}, 1, 0},
-{0x2F, (uint8_t []){0x01}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x16}, 3, 0},
-{0x00, (uint8_t []){0x00}, 1, 0},
-{0x01, (uint8_t []){0x00}, 1, 0},
-{0x02, (uint8_t []){0x00}, 1, 0},
-{0x03, (uint8_t []){0x00}, 1, 0},
-{0x04, (uint8_t []){0x08}, 1, 0},
-{0x05, (uint8_t []){0x04}, 1, 0},
-{0x06, (uint8_t []){0x19}, 1, 0},
-{0x07, (uint8_t []){0x18}, 1, 0},
-{0x08, (uint8_t []){0x17}, 1, 0},
-{0x09, (uint8_t []){0x16}, 1, 0},
-{0x0A, (uint8_t []){0x33}, 1, 0},
-{0x0B, (uint8_t []){0x32}, 1, 0},
-{0x0C, (uint8_t []){0x34}, 1, 0},
-{0x0D, (uint8_t []){0x35}, 1, 0},
-{0x0E, (uint8_t []){0x01}, 1, 0},
-{0x0F, (uint8_t []){0x01}, 1, 0},
-{0x20, (uint8_t []){0x00}, 1, 0},
-{0x21, (uint8_t []){0x00}, 1, 0},
-{0x22, (uint8_t []){0x00}, 1, 0},
-{0x23, (uint8_t []){0x00}, 1, 0},
-{0x24, (uint8_t []){0x04}, 1, 0},
-{0x25, (uint8_t []){0x08}, 1, 0},
-{0x26, (uint8_t []){0x16}, 1, 0},
-{0x27, (uint8_t []){0x17}, 1, 0},
-{0x28, (uint8_t []){0x18}, 1, 0},
-{0x29, (uint8_t []){0x19}, 1, 0},
-{0x2A, (uint8_t []){0x33}, 1, 0},
-{0x2B, (uint8_t []){0x32}, 1, 0},
-{0x2C, (uint8_t []){0x34}, 1, 0},
-{0x2D, (uint8_t []){0x35}, 1, 0},
-{0x2E, (uint8_t []){0x01}, 1, 0},
-{0x2F, (uint8_t []){0x01}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
-{0x00, (uint8_t []){0x99}, 1, 0},
-{0x2A, (uint8_t []){0x28}, 1, 0},
-{0x2B, (uint8_t []){0x0f}, 1, 0},
-{0x2C, (uint8_t []){0x16}, 1, 0},
-{0x2D, (uint8_t []){0x28}, 1, 0},
-{0x2E, (uint8_t []){0x0f}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0xA0}, 3, 0},
-{0x08, (uint8_t []){0xdc}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x45}, 3, 0},
-{0x03, (uint8_t []){0x64}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x40}, 3, 0},
-{0x86, (uint8_t []){0x00}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x00}, 3, 0},
-{0x2A, (uint8_t []){0x00, 0x00, 0x01, 0x63}, 4, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x42}, 3, 0},
-{0x05, (uint8_t []){0x2c}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x11}, 3, 0},
-{0x50, (uint8_t []){0x01}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
-{0x0D, (uint8_t []){0x66}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x17}, 3, 0},
-{0x39, (uint8_t []){0x3c}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x31}, 3, 0},
-{0x00, (uint8_t []){0x00}, 1, 0},
-{0x01, (uint8_t []){0x00}, 1, 0},
-{0x02, (uint8_t []){0x00}, 1, 0},
-{0x03, (uint8_t []){0x09}, 1, 0},
-{0x04, (uint8_t []){0x00}, 1, 0},
-{0x05, (uint8_t []){0x1c}, 1, 0},
-{0x06, (uint8_t []){0x00}, 1, 0},
-{0x07, (uint8_t []){0x36}, 1, 0},
-{0x08, (uint8_t []){0x00}, 1, 0},
-{0x09, (uint8_t []){0x3d}, 1, 0},
-{0x0a, (uint8_t []){0x00}, 1, 0},
-{0x0b, (uint8_t []){0x54}, 1, 0},
-{0x0c, (uint8_t []){0x00}, 1, 0},
-{0x0d, (uint8_t []){0x62}, 1, 0},
-{0x0e, (uint8_t []){0x00}, 1, 0},
-{0x0f, (uint8_t []){0x72}, 1, 0},
-{0x10, (uint8_t []){0x00}, 1, 0},
-{0x11, (uint8_t []){0x79}, 1, 0},
-{0x12, (uint8_t []){0x00}, 1, 0},
-{0x13, (uint8_t []){0xa6}, 1, 0},
-{0x14, (uint8_t []){0x00}, 1, 0},
-{0x15, (uint8_t []){0xd0}, 1, 0},
-{0x16, (uint8_t []){0x01}, 1, 0},
-{0x17, (uint8_t []){0x0e}, 1, 0},
-{0x18, (uint8_t []){0x01}, 1, 0},
-{0x19, (uint8_t []){0x3d}, 1, 0},
-{0x1a, (uint8_t []){0x01}, 1, 0},
-{0x1b, (uint8_t []){0x7b}, 1, 0},
-{0x1c, (uint8_t []){0x01}, 1, 0},
-{0x1d, (uint8_t []){0xcf}, 1, 0},
-{0x1e, (uint8_t []){0x02}, 1, 0},
-{0x1f, (uint8_t []){0x0E}, 1, 0},
-{0x20, (uint8_t []){0x02}, 1, 0},
-{0x21, (uint8_t []){0x53}, 1, 0},
-{0x22, (uint8_t []){0x02}, 1, 0},
-{0x23, (uint8_t []){0x80}, 1, 0},
-{0x24, (uint8_t []){0x02}, 1, 0},
-{0x25, (uint8_t []){0xC2}, 1, 0},
-{0x26, (uint8_t []){0x02}, 1, 0},
-{0x27, (uint8_t []){0xFA}, 1, 0},
-{0x28, (uint8_t []){0x03}, 1, 0},
-{0x29, (uint8_t []){0x3E}, 1, 0},
-{0x2a, (uint8_t []){0x03}, 1, 0},
-{0x2b, (uint8_t []){0x52}, 1, 0},
-{0x2c, (uint8_t []){0x03}, 1, 0},
-{0x2d, (uint8_t []){0x70}, 1, 0},
-{0x2e, (uint8_t []){0x03}, 1, 0},
-{0x2f, (uint8_t []){0x8E}, 1, 0},
-{0x30, (uint8_t []){0x03}, 1, 0},
-{0x31, (uint8_t []){0xA2}, 1, 0},
-{0x32, (uint8_t []){0x03}, 1, 0},
-{0x33, (uint8_t []){0xBA}, 1, 0},
-{0x34, (uint8_t []){0x03}, 1, 0},
-{0x35, (uint8_t []){0xCF}, 1, 0},
-{0x36, (uint8_t []){0x03}, 1, 0},
-{0x37, (uint8_t []){0xe8}, 1, 0},
-{0x38, (uint8_t []){0x03}, 1, 0},
-{0x39, (uint8_t []){0xf0}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x32}, 3, 0},
-{0x00, (uint8_t []){0x00}, 1, 0},
-{0x01, (uint8_t []){0x00}, 1, 0},
-{0x02, (uint8_t []){0x00}, 1, 0},
-{0x03, (uint8_t []){0x09}, 1, 0},
-{0x04, (uint8_t []){0x00}, 1, 0},
-{0x05, (uint8_t []){0x1c}, 1, 0},
-{0x06, (uint8_t []){0x00}, 1, 0},
-{0x07, (uint8_t []){0x36}, 1, 0},
-{0x08, (uint8_t []){0x00}, 1, 0},
-{0x09, (uint8_t []){0x3d}, 1, 0},
-{0x0a, (uint8_t []){0x00}, 1, 0},
-{0x0b, (uint8_t []){0x54}, 1, 0},
-{0x0c, (uint8_t []){0x00}, 1, 0},
-{0x0d, (uint8_t []){0x62}, 1, 0},
-{0x0e, (uint8_t []){0x00}, 1, 0},
-{0x0f, (uint8_t []){0x72}, 1, 0},
-{0x10, (uint8_t []){0x00}, 1, 0},
-{0x11, (uint8_t []){0x79}, 1, 0},
-{0x12, (uint8_t []){0x00}, 1, 0},
-{0x13, (uint8_t []){0xa6}, 1, 0},
-{0x14, (uint8_t []){0x00}, 1, 0},
-{0x15, (uint8_t []){0xd0}, 1, 0},
-{0x16, (uint8_t []){0x01}, 1, 0},
-{0x17, (uint8_t []){0x0e}, 1, 0},
-{0x18, (uint8_t []){0x01}, 1, 0},
-{0x19, (uint8_t []){0x3d}, 1, 0},
-{0x1a, (uint8_t []){0x01}, 1, 0},
-{0x1b, (uint8_t []){0x7b}, 1, 0},
-{0x1c, (uint8_t []){0x01}, 1, 0},
-{0x1d, (uint8_t []){0xcf}, 1, 0},
-{0x1e, (uint8_t []){0x02}, 1, 0},
-{0x1f, (uint8_t []){0x0E}, 1, 0},
-{0x20, (uint8_t []){0x02}, 1, 0},
-{0x21, (uint8_t []){0x53}, 1, 0},
-{0x22, (uint8_t []){0x02}, 1, 0},
-{0x23, (uint8_t []){0x80}, 1, 0},
-{0x24, (uint8_t []){0x02}, 1, 0},
-{0x25, (uint8_t []){0xC2}, 1, 0},
-{0x26, (uint8_t []){0x02}, 1, 0},
-{0x27, (uint8_t []){0xFA}, 1, 0},
-{0x28, (uint8_t []){0x03}, 1, 0},
-{0x29, (uint8_t []){0x3E}, 1, 0},
-{0x2a, (uint8_t []){0x03}, 1, 0},
-{0x2b, (uint8_t []){0x52}, 1, 0},
-{0x2c, (uint8_t []){0x03}, 1, 0},
-{0x2d, (uint8_t []){0x70}, 1, 0},
-{0x2e, (uint8_t []){0x03}, 1, 0},
-{0x2f, (uint8_t []){0x8E}, 1, 0},
-{0x30, (uint8_t []){0x03}, 1, 0},
-{0x31, (uint8_t []){0xA2}, 1, 0},
-{0x32, (uint8_t []){0x03}, 1, 0},
-{0x33, (uint8_t []){0xBA}, 1, 0},
-{0x34, (uint8_t []){0x03}, 1, 0},
-{0x35, (uint8_t []){0xCF}, 1, 0},
-{0x36, (uint8_t []){0x03}, 1, 0},
-{0x37, (uint8_t []){0xe8}, 1, 0},
-{0x38, (uint8_t []){0x03}, 1, 0},
-{0x39, (uint8_t []){0xf0}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x11}, 3, 0},
-{0x60, (uint8_t []){0x01}, 1, 0},
-{0x65, (uint8_t []){0x03}, 1, 0},
-{0x66, (uint8_t []){0x38}, 1, 0},
-{0x67, (uint8_t []){0x04}, 1, 0},
-{0x68, (uint8_t []){0x34}, 1, 0},
-{0x69, (uint8_t []){0x03}, 1, 0},
-{0x61, (uint8_t []){0x03}, 1, 0},
-{0x62, (uint8_t []){0x38}, 1, 0},
-{0x63, (uint8_t []){0x04}, 1, 0},
-{0x64, (uint8_t []){0x34}, 1, 0},
-{0x0A, (uint8_t []){0x11}, 1, 0},
-{0x0B, (uint8_t []){0x14}, 1, 0},
-{0x0c, (uint8_t []){0x14}, 1, 0},
-{0x55, (uint8_t []){0x06}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x42}, 3, 0},
-{0x05, (uint8_t []){0x3D}, 1, 0},
-{0x06, (uint8_t []){0x03}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
-{0x1f, (uint8_t []){0xdc}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x17}, 3, 0},
-{0x11, (uint8_t []){0xAA}, 1, 0},
-{0x16, (uint8_t []){0x12}, 1, 0},
-{0x0B, (uint8_t []){0xC3}, 1, 0},
-{0x10, (uint8_t []){0x0E}, 1, 0},
-{0x14, (uint8_t []){0xAA}, 1, 0},
-{0x18, (uint8_t []){0xA0}, 1, 0},
-{0x1A, (uint8_t []){0x80}, 1, 0},
-{0x1F, (uint8_t []){0x80}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x11}, 3, 0},
-{0x30, (uint8_t []){0xEE}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
-{0x15, (uint8_t []){0x0F}, 1, 0},
-{0x10, (uint8_t []){0x0F}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x40}, 3, 0},
-{0x83, (uint8_t []){0xC4}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x2d}, 3, 0},
-{0x01, (uint8_t []){0x3e}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
-{0x2B, (uint8_t []){0x1e}, 1, 0},
-{0x2C, (uint8_t []){0x26}, 1, 0},
-{0x2E, (uint8_t []){0x1e}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x18}, 3, 0},
-{0x01, (uint8_t []){0x01}, 1, 0},
-{0x00, (uint8_t []){0x1E}, 1, 0},
-{0xFF, (uint8_t []){0x20, 0x10, 0x43}, 3, 0},
-{0x03, (uint8_t []){0x04}, 1, 0},
-//touch For I2C
-{0xFF, (uint8_t []){0x20, 0x10, 0x50}, 3, 0},
-{0x05, (uint8_t []){0x00}, 1, 0},
-{0x00, (uint8_t []){0xA6}, 1, 0},
-{0x01, (uint8_t []){0xA6}, 1, 0},
-{0x08, (uint8_t []){0x55}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x10}, 3, 0},
+    {0x0C, (uint8_t[]){0x11}, 1, 0},
+    {0x10, (uint8_t[]){0x02}, 1, 0},
+    {0x11, (uint8_t[]){0x11}, 1, 0},
+    {0x15, (uint8_t[]){0x42}, 1, 0},
+    {0x16, (uint8_t[]){0x11}, 1, 0},
+    {0x1A, (uint8_t[]){0x02}, 1, 0},
+    {0x1B, (uint8_t[]){0x11}, 1, 0},
+    {0x61, (uint8_t[]){0x80}, 1, 0},
+    {0x62, (uint8_t[]){0x80}, 1, 0},
+    {0x54, (uint8_t[]){0x44}, 1, 0},
+    {0x58, (uint8_t[]){0x88}, 1, 0},
+    {0x5C, (uint8_t[]){0xcc}, 1, 0},
+    {0x20, (uint8_t[]){0x80}, 1, 0},
+    {0x21, (uint8_t[]){0x81}, 1, 0},
+    {0x22, (uint8_t[]){0x31}, 1, 0},
+    {0x23, (uint8_t[]){0x20}, 1, 0},
+    {0x24, (uint8_t[]){0x11}, 1, 0},
+    {0x25, (uint8_t[]){0x11}, 1, 0},
+    {0x26, (uint8_t[]){0x12}, 1, 0},
+    {0x27, (uint8_t[]){0x12}, 1, 0},
+    {0x30, (uint8_t[]){0x80}, 1, 0},
+    {0x31, (uint8_t[]){0x81}, 1, 0},
+    {0x32, (uint8_t[]){0x31}, 1, 0},
+    {0x33, (uint8_t[]){0x20}, 1, 0},
+    {0x34, (uint8_t[]){0x11}, 1, 0},
+    {0x35, (uint8_t[]){0x11}, 1, 0},
+    {0x36, (uint8_t[]){0x12}, 1, 0},
+    {0x37, (uint8_t[]){0x12}, 1, 0},
+    {0x41, (uint8_t[]){0x11}, 1, 0},
+    {0x42, (uint8_t[]){0x22}, 1, 0},
+    {0x43, (uint8_t[]){0x33}, 1, 0},
+    {0x49, (uint8_t[]){0x11}, 1, 0},
+    {0x4A, (uint8_t[]){0x22}, 1, 0},
+    {0x4B, (uint8_t[]){0x33}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x15}, 3, 0},
+    {0x00, (uint8_t[]){0x00}, 1, 0},
+    {0x01, (uint8_t[]){0x00}, 1, 0},
+    {0x02, (uint8_t[]){0x00}, 1, 0},
+    {0x03, (uint8_t[]){0x00}, 1, 0},
+    {0x04, (uint8_t[]){0x10}, 1, 0},
+    {0x05, (uint8_t[]){0x0C}, 1, 0},
+    {0x06, (uint8_t[]){0x23}, 1, 0},
+    {0x07, (uint8_t[]){0x22}, 1, 0},
+    {0x08, (uint8_t[]){0x21}, 1, 0},
+    {0x09, (uint8_t[]){0x20}, 1, 0},
+    {0x0A, (uint8_t[]){0x33}, 1, 0},
+    {0x0B, (uint8_t[]){0x32}, 1, 0},
+    {0x0C, (uint8_t[]){0x34}, 1, 0},
+    {0x0D, (uint8_t[]){0x35}, 1, 0},
+    {0x0E, (uint8_t[]){0x01}, 1, 0},
+    {0x0F, (uint8_t[]){0x01}, 1, 0},
+    {0x20, (uint8_t[]){0x00}, 1, 0},
+    {0x21, (uint8_t[]){0x00}, 1, 0},
+    {0x22, (uint8_t[]){0x00}, 1, 0},
+    {0x23, (uint8_t[]){0x00}, 1, 0},
+    {0x24, (uint8_t[]){0x0C}, 1, 0},
+    {0x25, (uint8_t[]){0x10}, 1, 0},
+    {0x26, (uint8_t[]){0x20}, 1, 0},
+    {0x27, (uint8_t[]){0x21}, 1, 0},
+    {0x28, (uint8_t[]){0x22}, 1, 0},
+    {0x29, (uint8_t[]){0x23}, 1, 0},
+    {0x2A, (uint8_t[]){0x33}, 1, 0},
+    {0x2B, (uint8_t[]){0x32}, 1, 0},
+    {0x2C, (uint8_t[]){0x34}, 1, 0},
+    {0x2D, (uint8_t[]){0x35}, 1, 0},
+    {0x2E, (uint8_t[]){0x01}, 1, 0},
+    {0x2F, (uint8_t[]){0x01}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x16}, 3, 0},
+    {0x00, (uint8_t[]){0x00}, 1, 0},
+    {0x01, (uint8_t[]){0x00}, 1, 0},
+    {0x02, (uint8_t[]){0x00}, 1, 0},
+    {0x03, (uint8_t[]){0x00}, 1, 0},
+    {0x04, (uint8_t[]){0x08}, 1, 0},
+    {0x05, (uint8_t[]){0x04}, 1, 0},
+    {0x06, (uint8_t[]){0x19}, 1, 0},
+    {0x07, (uint8_t[]){0x18}, 1, 0},
+    {0x08, (uint8_t[]){0x17}, 1, 0},
+    {0x09, (uint8_t[]){0x16}, 1, 0},
+    {0x0A, (uint8_t[]){0x33}, 1, 0},
+    {0x0B, (uint8_t[]){0x32}, 1, 0},
+    {0x0C, (uint8_t[]){0x34}, 1, 0},
+    {0x0D, (uint8_t[]){0x35}, 1, 0},
+    {0x0E, (uint8_t[]){0x01}, 1, 0},
+    {0x0F, (uint8_t[]){0x01}, 1, 0},
+    {0x20, (uint8_t[]){0x00}, 1, 0},
+    {0x21, (uint8_t[]){0x00}, 1, 0},
+    {0x22, (uint8_t[]){0x00}, 1, 0},
+    {0x23, (uint8_t[]){0x00}, 1, 0},
+    {0x24, (uint8_t[]){0x04}, 1, 0},
+    {0x25, (uint8_t[]){0x08}, 1, 0},
+    {0x26, (uint8_t[]){0x16}, 1, 0},
+    {0x27, (uint8_t[]){0x17}, 1, 0},
+    {0x28, (uint8_t[]){0x18}, 1, 0},
+    {0x29, (uint8_t[]){0x19}, 1, 0},
+    {0x2A, (uint8_t[]){0x33}, 1, 0},
+    {0x2B, (uint8_t[]){0x32}, 1, 0},
+    {0x2C, (uint8_t[]){0x34}, 1, 0},
+    {0x2D, (uint8_t[]){0x35}, 1, 0},
+    {0x2E, (uint8_t[]){0x01}, 1, 0},
+    {0x2F, (uint8_t[]){0x01}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x12}, 3, 0},
+    {0x00, (uint8_t[]){0x99}, 1, 0},
+    {0x2A, (uint8_t[]){0x28}, 1, 0},
+    {0x2B, (uint8_t[]){0x0f}, 1, 0},
+    {0x2C, (uint8_t[]){0x16}, 1, 0},
+    {0x2D, (uint8_t[]){0x28}, 1, 0},
+    {0x2E, (uint8_t[]){0x0f}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0xA0}, 3, 0},
+    {0x08, (uint8_t[]){0xdc}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x45}, 3, 0},
+    {0x03, (uint8_t[]){0x64}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x40}, 3, 0},
+    {0x86, (uint8_t[]){0x00}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x00}, 3, 0},
+    {0x2A, (uint8_t[]){0x00, 0x00, 0x01, 0x63}, 4, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x42}, 3, 0},
+    {0x05, (uint8_t[]){0x2c}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x11}, 3, 0},
+    {0x50, (uint8_t[]){0x01}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x12}, 3, 0},
+    {0x0D, (uint8_t[]){0x66}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x17}, 3, 0},
+    {0x39, (uint8_t[]){0x3c}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x31}, 3, 0},
+    {0x00, (uint8_t[]){0x00}, 1, 0},
+    {0x01, (uint8_t[]){0x00}, 1, 0},
+    {0x02, (uint8_t[]){0x00}, 1, 0},
+    {0x03, (uint8_t[]){0x09}, 1, 0},
+    {0x04, (uint8_t[]){0x00}, 1, 0},
+    {0x05, (uint8_t[]){0x1c}, 1, 0},
+    {0x06, (uint8_t[]){0x00}, 1, 0},
+    {0x07, (uint8_t[]){0x36}, 1, 0},
+    {0x08, (uint8_t[]){0x00}, 1, 0},
+    {0x09, (uint8_t[]){0x3d}, 1, 0},
+    {0x0a, (uint8_t[]){0x00}, 1, 0},
+    {0x0b, (uint8_t[]){0x54}, 1, 0},
+    {0x0c, (uint8_t[]){0x00}, 1, 0},
+    {0x0d, (uint8_t[]){0x62}, 1, 0},
+    {0x0e, (uint8_t[]){0x00}, 1, 0},
+    {0x0f, (uint8_t[]){0x72}, 1, 0},
+    {0x10, (uint8_t[]){0x00}, 1, 0},
+    {0x11, (uint8_t[]){0x79}, 1, 0},
+    {0x12, (uint8_t[]){0x00}, 1, 0},
+    {0x13, (uint8_t[]){0xa6}, 1, 0},
+    {0x14, (uint8_t[]){0x00}, 1, 0},
+    {0x15, (uint8_t[]){0xd0}, 1, 0},
+    {0x16, (uint8_t[]){0x01}, 1, 0},
+    {0x17, (uint8_t[]){0x0e}, 1, 0},
+    {0x18, (uint8_t[]){0x01}, 1, 0},
+    {0x19, (uint8_t[]){0x3d}, 1, 0},
+    {0x1a, (uint8_t[]){0x01}, 1, 0},
+    {0x1b, (uint8_t[]){0x7b}, 1, 0},
+    {0x1c, (uint8_t[]){0x01}, 1, 0},
+    {0x1d, (uint8_t[]){0xcf}, 1, 0},
+    {0x1e, (uint8_t[]){0x02}, 1, 0},
+    {0x1f, (uint8_t[]){0x0E}, 1, 0},
+    {0x20, (uint8_t[]){0x02}, 1, 0},
+    {0x21, (uint8_t[]){0x53}, 1, 0},
+    {0x22, (uint8_t[]){0x02}, 1, 0},
+    {0x23, (uint8_t[]){0x80}, 1, 0},
+    {0x24, (uint8_t[]){0x02}, 1, 0},
+    {0x25, (uint8_t[]){0xC2}, 1, 0},
+    {0x26, (uint8_t[]){0x02}, 1, 0},
+    {0x27, (uint8_t[]){0xFA}, 1, 0},
+    {0x28, (uint8_t[]){0x03}, 1, 0},
+    {0x29, (uint8_t[]){0x3E}, 1, 0},
+    {0x2a, (uint8_t[]){0x03}, 1, 0},
+    {0x2b, (uint8_t[]){0x52}, 1, 0},
+    {0x2c, (uint8_t[]){0x03}, 1, 0},
+    {0x2d, (uint8_t[]){0x70}, 1, 0},
+    {0x2e, (uint8_t[]){0x03}, 1, 0},
+    {0x2f, (uint8_t[]){0x8E}, 1, 0},
+    {0x30, (uint8_t[]){0x03}, 1, 0},
+    {0x31, (uint8_t[]){0xA2}, 1, 0},
+    {0x32, (uint8_t[]){0x03}, 1, 0},
+    {0x33, (uint8_t[]){0xBA}, 1, 0},
+    {0x34, (uint8_t[]){0x03}, 1, 0},
+    {0x35, (uint8_t[]){0xCF}, 1, 0},
+    {0x36, (uint8_t[]){0x03}, 1, 0},
+    {0x37, (uint8_t[]){0xe8}, 1, 0},
+    {0x38, (uint8_t[]){0x03}, 1, 0},
+    {0x39, (uint8_t[]){0xf0}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x32}, 3, 0},
+    {0x00, (uint8_t[]){0x00}, 1, 0},
+    {0x01, (uint8_t[]){0x00}, 1, 0},
+    {0x02, (uint8_t[]){0x00}, 1, 0},
+    {0x03, (uint8_t[]){0x09}, 1, 0},
+    {0x04, (uint8_t[]){0x00}, 1, 0},
+    {0x05, (uint8_t[]){0x1c}, 1, 0},
+    {0x06, (uint8_t[]){0x00}, 1, 0},
+    {0x07, (uint8_t[]){0x36}, 1, 0},
+    {0x08, (uint8_t[]){0x00}, 1, 0},
+    {0x09, (uint8_t[]){0x3d}, 1, 0},
+    {0x0a, (uint8_t[]){0x00}, 1, 0},
+    {0x0b, (uint8_t[]){0x54}, 1, 0},
+    {0x0c, (uint8_t[]){0x00}, 1, 0},
+    {0x0d, (uint8_t[]){0x62}, 1, 0},
+    {0x0e, (uint8_t[]){0x00}, 1, 0},
+    {0x0f, (uint8_t[]){0x72}, 1, 0},
+    {0x10, (uint8_t[]){0x00}, 1, 0},
+    {0x11, (uint8_t[]){0x79}, 1, 0},
+    {0x12, (uint8_t[]){0x00}, 1, 0},
+    {0x13, (uint8_t[]){0xa6}, 1, 0},
+    {0x14, (uint8_t[]){0x00}, 1, 0},
+    {0x15, (uint8_t[]){0xd0}, 1, 0},
+    {0x16, (uint8_t[]){0x01}, 1, 0},
+    {0x17, (uint8_t[]){0x0e}, 1, 0},
+    {0x18, (uint8_t[]){0x01}, 1, 0},
+    {0x19, (uint8_t[]){0x3d}, 1, 0},
+    {0x1a, (uint8_t[]){0x01}, 1, 0},
+    {0x1b, (uint8_t[]){0x7b}, 1, 0},
+    {0x1c, (uint8_t[]){0x01}, 1, 0},
+    {0x1d, (uint8_t[]){0xcf}, 1, 0},
+    {0x1e, (uint8_t[]){0x02}, 1, 0},
+    {0x1f, (uint8_t[]){0x0E}, 1, 0},
+    {0x20, (uint8_t[]){0x02}, 1, 0},
+    {0x21, (uint8_t[]){0x53}, 1, 0},
+    {0x22, (uint8_t[]){0x02}, 1, 0},
+    {0x23, (uint8_t[]){0x80}, 1, 0},
+    {0x24, (uint8_t[]){0x02}, 1, 0},
+    {0x25, (uint8_t[]){0xC2}, 1, 0},
+    {0x26, (uint8_t[]){0x02}, 1, 0},
+    {0x27, (uint8_t[]){0xFA}, 1, 0},
+    {0x28, (uint8_t[]){0x03}, 1, 0},
+    {0x29, (uint8_t[]){0x3E}, 1, 0},
+    {0x2a, (uint8_t[]){0x03}, 1, 0},
+    {0x2b, (uint8_t[]){0x52}, 1, 0},
+    {0x2c, (uint8_t[]){0x03}, 1, 0},
+    {0x2d, (uint8_t[]){0x70}, 1, 0},
+    {0x2e, (uint8_t[]){0x03}, 1, 0},
+    {0x2f, (uint8_t[]){0x8E}, 1, 0},
+    {0x30, (uint8_t[]){0x03}, 1, 0},
+    {0x31, (uint8_t[]){0xA2}, 1, 0},
+    {0x32, (uint8_t[]){0x03}, 1, 0},
+    {0x33, (uint8_t[]){0xBA}, 1, 0},
+    {0x34, (uint8_t[]){0x03}, 1, 0},
+    {0x35, (uint8_t[]){0xCF}, 1, 0},
+    {0x36, (uint8_t[]){0x03}, 1, 0},
+    {0x37, (uint8_t[]){0xe8}, 1, 0},
+    {0x38, (uint8_t[]){0x03}, 1, 0},
+    {0x39, (uint8_t[]){0xf0}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x11}, 3, 0},
+    {0x60, (uint8_t[]){0x01}, 1, 0},
+    {0x65, (uint8_t[]){0x03}, 1, 0},
+    {0x66, (uint8_t[]){0x38}, 1, 0},
+    {0x67, (uint8_t[]){0x04}, 1, 0},
+    {0x68, (uint8_t[]){0x34}, 1, 0},
+    {0x69, (uint8_t[]){0x03}, 1, 0},
+    {0x61, (uint8_t[]){0x03}, 1, 0},
+    {0x62, (uint8_t[]){0x38}, 1, 0},
+    {0x63, (uint8_t[]){0x04}, 1, 0},
+    {0x64, (uint8_t[]){0x34}, 1, 0},
+    {0x0A, (uint8_t[]){0x11}, 1, 0},
+    {0x0B, (uint8_t[]){0x14}, 1, 0},
+    {0x0c, (uint8_t[]){0x14}, 1, 0},
+    {0x55, (uint8_t[]){0x06}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x42}, 3, 0},
+    {0x05, (uint8_t[]){0x3D}, 1, 0},
+    {0x06, (uint8_t[]){0x03}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x12}, 3, 0},
+    {0x1f, (uint8_t[]){0xdc}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x17}, 3, 0},
+    {0x11, (uint8_t[]){0xAA}, 1, 0},
+    {0x16, (uint8_t[]){0x12}, 1, 0},
+    {0x0B, (uint8_t[]){0xC3}, 1, 0},
+    {0x10, (uint8_t[]){0x0E}, 1, 0},
+    {0x14, (uint8_t[]){0xAA}, 1, 0},
+    {0x18, (uint8_t[]){0xA0}, 1, 0},
+    {0x1A, (uint8_t[]){0x80}, 1, 0},
+    {0x1F, (uint8_t[]){0x80}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x11}, 3, 0},
+    {0x30, (uint8_t[]){0xEE}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x12}, 3, 0},
+    {0x15, (uint8_t[]){0x0F}, 1, 0},
+    {0x10, (uint8_t[]){0x0F}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x40}, 3, 0},
+    {0x83, (uint8_t[]){0xC4}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x2d}, 3, 0},
+    {0x01, (uint8_t[]){0x3e}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x12}, 3, 0},
+    {0x2B, (uint8_t[]){0x1e}, 1, 0},
+    {0x2C, (uint8_t[]){0x26}, 1, 0},
+    {0x2E, (uint8_t[]){0x1e}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x18}, 3, 0},
+    {0x01, (uint8_t[]){0x01}, 1, 0},
+    {0x00, (uint8_t[]){0x1E}, 1, 0},
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x43}, 3, 0},
+    {0x03, (uint8_t[]){0x04}, 1, 0},
+    // touch For I2C
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x50}, 3, 0},
+    {0x05, (uint8_t[]){0x00}, 1, 0},
+    {0x00, (uint8_t[]){0xA6}, 1, 0},
+    {0x01, (uint8_t[]){0xA6}, 1, 0},
+    {0x08, (uint8_t[]){0x55}, 1, 0},
 
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x12}, 3, 0},
+    {0x21, (uint8_t[]){0xB4}, 1, 0}, // set vcom
+    {0xFF, (uint8_t[]){0x20, 0x10, 0x00}, 3, 0},
+    // ADD FOR QSPI/TP TEST
+    //{0x3A, (uint8_t []){0x05}, 1, 0},
 
-{0xFF, (uint8_t []){0x20, 0x10, 0x12}, 3, 0},
-{0x21, (uint8_t []){0xB4}, 1, 0}, //set vcom
-{0xFF, (uint8_t []){0x20, 0x10, 0x00}, 3, 0},
-// ADD FOR QSPI/TP TEST
-//{0x3A, (uint8_t []){0x05}, 1, 0},
-
-{0x11, (uint8_t []){0x00}, 0, 0},
-{0x29, (uint8_t []){0x00}, 0, 0},
+    {0x11, (uint8_t[]){0x00}, 0, 0},
+    {0x29, (uint8_t[]){0x00}, 0, 0},
 };
 
 void app_main(void)
@@ -593,8 +602,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Turn off LCD backlight");
     gpio_config_t bk_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << EXAMPLE_PIN_NUM_BK_LIGHT
-    };
+        .pin_bit_mask = 1ULL << EXAMPLE_PIN_NUM_BK_LIGHT};
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
 
     ESP_LOGI(TAG, "Initialize SPI bus");
@@ -626,11 +634,22 @@ void app_main(void)
         },
     };
 #elif CONFIG_EXAMPLE_LCD_CONTROLLER_SPD2010
-    const esp_lcd_panel_io_spi_config_t io_config = SPD2010_PANEL_IO_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_CS,
-                                                                                example_notify_lvgl_flush_ready,
-                                                                                &disp_drv);
+    const esp_lcd_panel_io_spi_config_t io_config = {                                     
+        .cs_gpio_num = EXAMPLE_PIN_NUM_LCD_CS,                                      
+        .dc_gpio_num = -1,                                      
+        .spi_mode = 3,                                          
+        .pclk_hz = 80 * 1000 * 1000,                            
+        .trans_queue_depth = 10,                                
+        .on_color_trans_done = example_notify_lvgl_flush_ready,                              
+        .user_ctx = &disp_drv,                                     
+        .lcd_cmd_bits = 32,                                     
+        .lcd_param_bits = 8,                                    
+        .flags = {                                              
+            .quad_mode = true,                                  
+        },                                                      
+    };
     spd2010_vendor_config_t vendor_config = {
-        .init_cmds = lcd_init_cmds,         // Uncomment these line if use custom initialization commands
+        .init_cmds = lcd_init_cmds, // Uncomment these line if use custom initialization commands
         .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(spd2010_lcd_init_cmd_t),
         .flags = {
             .use_qspi_interface = 1,
@@ -752,14 +771,13 @@ void app_main(void)
     // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = &example_increase_lvgl_tick,
-        .name = "lvgl_tick"
-    };
+        .name = "lvgl_tick"};
     esp_timer_handle_t lvgl_tick_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
 
 #if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
-    static lv_indev_drv_t indev_drv;    // Input device driver (Touch)
+    static lv_indev_drv_t indev_drv; // Input device driver (Touch)
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.disp = disp;
@@ -777,8 +795,9 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Display LVGL demos");
     // Lock the mutex due to the LVGL APIs are not thread-safe
-    if (example_lvgl_lock(-1)) {
-        lv_demo_widgets();      /* A widgets example */
+    if (example_lvgl_lock(-1))
+    {
+        lv_demo_widgets(); /* A widgets example */
         // lv_demo_music();        /* A modern, smartphone-like music player demo. */
         // lv_demo_stress();       /* A stress test for LVGL. */
         // lv_demo_benchmark();    /* A demo to measure the performance of LVGL or to compare different settings. */
