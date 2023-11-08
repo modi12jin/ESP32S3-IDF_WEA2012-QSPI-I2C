@@ -789,7 +789,7 @@ void app_main(void)
 #else
     (void)disp;
 #endif
-   lv_disp_set_rotation(disp,LV_DISP_ROT_180);//WEA2012不可以90度和270度
+   //lv_disp_set_rotation(disp,LV_DISP_ROT_180);//WEA2012不可以90度和270度
 
     lvgl_mux = xSemaphoreCreateMutex();
     assert(lvgl_mux);
