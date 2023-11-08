@@ -130,7 +130,7 @@ static void example_lvgl_update_cb(lv_disp_drv_t *drv)
     case LV_DISP_ROT_NONE:
         // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
-        esp_lcd_panel_mirror(panel_handle, true, false);
+        esp_lcd_panel_mirror(panel_handle, false, false);
 #if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
         // Rotate LCD touch
         esp_lcd_touch_set_mirror_y(tp, false);
@@ -150,7 +150,7 @@ static void example_lvgl_update_cb(lv_disp_drv_t *drv)
     case LV_DISP_ROT_180:
         // Rotate LCD display
         esp_lcd_panel_swap_xy(panel_handle, false);
-        esp_lcd_panel_mirror(panel_handle, false, true);
+        esp_lcd_panel_mirror(panel_handle, true, true);
 #if CONFIG_EXAMPLE_LCD_TOUCH_ENABLED
         // Rotate LCD touch
         esp_lcd_touch_set_mirror_y(tp, false);
@@ -763,6 +763,7 @@ void app_main(void)
     disp_drv.flush_cb = example_lvgl_flush_cb;
     disp_drv.rounder_cb = example_lvgl_rounder_cb;
     disp_drv.drv_update_cb = example_lvgl_update_cb;
+
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
@@ -788,6 +789,7 @@ void app_main(void)
 #else
     (void)disp;
 #endif
+   lv_disp_set_rotation(disp,LV_DISP_ROT_180);//WEA2012不可以90度和270度
 
     lvgl_mux = xSemaphoreCreateMutex();
     assert(lvgl_mux);
